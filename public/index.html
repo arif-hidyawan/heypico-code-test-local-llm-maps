@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>HeyPico.ai – LLM + Google Maps Demo</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 1rem;
+      background: #f3f4f6;
+    }
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    h1 {
+      margin-bottom: 0.5rem;
+    }
+    .search-box {
+      display: flex;
+      gap: 0.5rem;
+      margin: 1rem 0;
+    }
+    input[type="text"] {
+      flex: 1;
+      padding: 0.5rem 0.75rem;
+      border-radius: 0.375rem;
+      border: 1px solid #d1d5db;
+      font-size: 0.95rem;
+    }
+    button {
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      border: none;
+      background: #2563eb;
+      color: white;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    button:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+    .results {
+      display: flex;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .list {
+      flex: 1;
+      background: white;
+      border-radius: 0.5rem;
+      padding: 0.75rem;
+      max-height: 400px;
+      overflow-y: auto;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .place {
+      padding: 0.5rem;
+      border-radius: 0.375rem;
+      cursor: pointer;
+    }
+    .place:hover {
+      background: #eff6ff;
+    }
+    .place.active {
+      background: #dbeafe;
+    }
+    .place-title {
+      font-weight: 600;
+    }
+    .place-address {
+      font-size: 0.85rem;
+      color: #4b5563;
+    }
+    .place-links a {
+      font-size: 0.8rem;
+      margin-right: 0.5rem;
+    }
+    .map {
+      flex: 1;
+      background: white;
+      border-radius: 0.5rem;
+      padding: 0.5rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    iframe {
+      width: 100%;
+      height: 360px;
+      border: 0;
+      border-radius: 0.5rem;
+    }
+    .meta {
+      font-size: 0.8rem;
+      color: #6b7280;
+      margin-top: 0.5rem;
+    }
+    .error {
+      color: #b91c1c;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>HeyPico.ai – LLM + Google Maps Demo</h1>
+    <p>Examples: <code>find a cozy cafe in South Jakarta</code>, <code>family-friendly attractions in Bandung</code></p>
+
+    <div class="search-box">
+      <input type="text" id="queryInput" placeholder="Ask for places to go, eat, visit..." />
+      <button id="searchBtn" onclick="searchPlaces()">Search</button>
+    </div>
+
+    <div id="status" class="meta"></div>
+
+    <div class="results">
+      <div class="list">
+        <div id="placesList">No results yet. Try searching for a place.</div>
+      </div>
+      <div class="map">
+        <iframe
+          id="mapFrame"
+          loading="lazy"
+          referrerpolicy="no-referrer-when-downgrade">
+        </iframe>
+        <div id="mapInfo" class="meta"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    console.log('Frontend script loaded');
+
+    let currentPlaces = [];
+
+    function setLoading(loading) {
+      const btn = document.getElementById('searchBtn');
+      const status = document.getElementById('status');
+      btn.disabled = loading;
+      status.textContent = loading ? 'Searching for places…' : '';
+    }
+
+    async function searchPlaces() {
+      const queryInput = document.getElementById('queryInput');
+      const query = queryInput.value.trim();
+      const placesList = document.getElementById('placesList');
+      const mapFrame = document.getElementById('mapFrame');
+      const mapInfo = document.getElementById('mapInfo');
+      const status = document.getElementById('status');
+
+      console.log('searchPlaces called with query:', query);
+
+      if (!query) {
+        status.textContent = 'Please type your question first.';
+        return;
+      }
+
+      setLoading(true);
+      placesList.textContent = 'Searching…';
+      mapInfo.textContent = '';
+
+      try {
+        const res = await fetch('/api/places', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query }),
+        });
+
+        const data = await res.json();
+        console.log('API response:', data);
+
+        if (!res.ok) {
+          placesList.textContent = 'Error: ' + (data.error || res.status);
+          placesList.classList.add('error');
+          return;
+        }
+
+        currentPlaces = data.places || [];
+        placesList.classList.remove('error');
+
+        if (currentPlaces.length === 0) {
+          placesList.textContent = 'No places found for this query.';
+          mapFrame.src = '';
+          mapInfo.textContent = '';
+          return;
+        }
+
+        renderPlacesList();
+        showOnMap(0);
+        status.textContent = 'Parsed query: ' + JSON.stringify(data.parsed);
+      } catch (e) {
+        console.error('Fetch error:', e);
+        placesList.textContent = 'Network error. Please try again.';
+        placesList.classList.add('error');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function renderPlacesList() {
+      const container = document.getElementById('placesList');
+      container.innerHTML = '';
+
+      currentPlaces.forEach((place, index) => {
+        const div = document.createElement('div');
+        div.className = 'place';
+        div.onclick = () => showOnMap(index);
+
+        const title = document.createElement('div');
+        title.className = 'place-title';
+        title.textContent = place.name;
+
+        const addr = document.createElement('div');
+        addr.className = 'place-address';
+        addr.textContent = place.address || '';
+
+        const links = document.createElement('div');
+        links.className = 'place-links';
+        if (place.google_maps_url) {
+          const a1 = document.createElement('a');
+          a1.href = place.google_maps_url;
+          a1.target = '_blank';
+          a1.textContent = 'Open in Maps';
+          links.appendChild(a1);
+        }
+        if (place.directions_url) {
+          const a2 = document.createElement('a');
+          a2.href = place.directions_url;
+          a2.target = '_blank';
+          a2.textContent = 'Get directions';
+          links.appendChild(a2);
+        }
+
+        div.appendChild(title);
+        div.appendChild(addr);
+        div.appendChild(links);
+        container.appendChild(div);
+      });
+    }
+
+    function showOnMap(index) {
+      const mapFrame = document.getElementById('mapFrame');
+      const mapInfo = document.getElementById('mapInfo');
+      const placesList = document.getElementById('placesList');
+
+      const place = currentPlaces[index];
+      if (!place) return;
+
+      Array.from(placesList.children).forEach((child, i) => {
+        child.classList.toggle('active', i === index);
+      });
+
+      if (place.map_embed_url) {
+        mapFrame.src = place.map_embed_url;
+      } else if (place.lat && place.lng) {
+        mapFrame.src =
+          'https://www.google.com/maps?q=' +
+          encodeURIComponent(place.lat + ',' + place.lng) +
+          '&output=embed';
+      }
+
+      mapInfo.textContent = place.name + (place.address ? ' – ' + place.address : '');
+    }
+  </script>
+</body>
+</html>

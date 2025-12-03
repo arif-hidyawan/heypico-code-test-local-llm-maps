@@ -1,0 +1,21 @@
+{
+  "name": "heypico-llm-maps",
+  "version": "1.0.0",
+  "description": "HeyPico.ai code test - local LLM + Google Maps",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node src/server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.0",
+    "express": "^4.21.0",
+    "express-rate-limit": "^7.0.0",
+    "helmet": "^8.0.0"
+  }
+}
